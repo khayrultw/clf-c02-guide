@@ -1,12 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 import { learnPages, referencePages, reviewPages } from '../content/catalog'
 import { loadMarkdownSource } from '../content/loadMarkdown'
-import { getHeadings } from '../content/slug'
 import MarkdownArticle from '../components/MarkdownArticle'
 import SiteNav from '../components/SiteNav'
-import TableOfContents from '../components/TableOfContents'
 import NotFoundPage from './NotFoundPage'
+import LoadingIndicator from '../components/LoadingIndicator'
 import useDocumentTitle from '../lib/useDocumentTitle'
 
 const collections = {
@@ -21,7 +20,6 @@ export default function DocumentPage({ collection }) {
   const entry = collections[collection].find((page) => page.slug === slug)
   const [loaded, setLoaded] = useState({ source: null, markdown: '' })
   const markdown = loaded.source === entry?.source ? loaded.markdown : null
-  const headings = useMemo(() => markdown ? getHeadings(markdown.replace(/^# .+\n/, '')) : [], [markdown])
   useDocumentTitle(entry?.title || 'Page not found')
 
   useEffect(() => {
@@ -77,7 +75,8 @@ export default function DocumentPage({ collection }) {
           {entry.weight && <p>{entry.weight}% of scored exam content</p>}
         </header>
         {markdown == null
-          ? <p className="muted">Loading...</p>
+          ? <LoadingIndicator inline />
+
           : <MarkdownArticle markdown={markdown} collection={collection} slug={slug} />}
         <nav className="document-pagination" aria-label="Document pagination">
           {previous
@@ -88,8 +87,6 @@ export default function DocumentPage({ collection }) {
             : <span />}
         </nav>
       </div>
-
-      <TableOfContents headings={headings} />
     </div>
   )
 }

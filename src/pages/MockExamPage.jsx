@@ -8,6 +8,7 @@ import { examDomains } from '../content/catalog'
 import { percent } from '../lib/progress'
 import OptionList from '../components/OptionList'
 import AnswerExplanation from '../components/AnswerExplanation'
+import LoadingIndicator from '../components/LoadingIndicator'
 
 const attemptFields = 'id,kind,status,score,total,started_at,expires_at,completed_at,question_ids,current_question_index,flagged_question_ids'
 // A rule of thumb only: the real exam reports a scaled score (pass mark 700 of 1,000).
@@ -170,7 +171,7 @@ export default function MockExamPage() {
     return () => setPracticeActive(false)
   }, [phase, setPracticeActive])
 
-  if (phase === 'loading') return <div className="loading-page">Loading mock exam...</div>
+  if (phase === 'loading') return <div className="loading-page"><LoadingIndicator label="Loading mock exam..." /></div>
 
   if (phase === 'unavailable' || phase === 'error') {
     return (

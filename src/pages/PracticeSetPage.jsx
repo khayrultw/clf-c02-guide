@@ -8,6 +8,7 @@ import useDocumentTitle from '../lib/useDocumentTitle'
 import AnswerExplanation from '../components/AnswerExplanation'
 import OptionList from '../components/OptionList'
 import NotFoundPage from './NotFoundPage'
+import LoadingIndicator from '../components/LoadingIndicator'
 
 const attemptFields = 'id,set_id,status,score,total,started_at,completed_at,current_question_index,current_selected_answers'
 
@@ -146,7 +147,7 @@ export default function PracticeSetPage() {
   }, [phase, attempt, setPracticeActive])
 
   if (phase === 'missing') return <NotFoundPage />
-  if (phase === 'loading' || !set) return <div className="loading-page">Loading practice set...</div>
+  if (phase === 'loading' || !set) return <div className="loading-page"><LoadingIndicator label="Loading practice set..." /></div>
 
   if (phase === 'error') {
     return (

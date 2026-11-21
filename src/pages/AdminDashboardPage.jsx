@@ -3,6 +3,7 @@ import { supabase, isSupabaseConfigured, fetchAllRows } from '../lib/supabase'
 import { percent, weakestDomain } from '../lib/progress'
 import useDocumentTitle from '../lib/useDocumentTitle'
 import DomainPerformance from '../components/DomainPerformance'
+import LoadingIndicator from '../components/LoadingIndicator'
 
 async function loadOverview() {
   const [profiles, attempts, domains, setResult] = await Promise.all([
@@ -89,7 +90,7 @@ export default function AdminDashboardPage() {
     }
   }), [students, studentAttempts, studentDomains])
 
-  if (loading) return <div className="loading-page">Loading all progress...</div>
+  if (loading) return <div className="loading-page"><LoadingIndicator label="Loading all progress..." /></div>
 
   return (
     <div className="dashboard-page">

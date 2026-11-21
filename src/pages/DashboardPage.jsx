@@ -5,6 +5,7 @@ import { useAuth } from '../lib/AuthContext'
 import { percent, weakestDomain } from '../lib/progress'
 import useDocumentTitle from '../lib/useDocumentTitle'
 import DomainPerformance from '../components/DomainPerformance'
+import LoadingIndicator from '../components/LoadingIndicator'
 
 async function loadProgress() {
   const [attempts, domains, setResult] = await Promise.all([
@@ -69,7 +70,7 @@ export default function DashboardPage() {
   const focus = useMemo(() => weakestDomain(domains), [domains])
   const setTitles = useMemo(() => new Map(sets.map((set) => [set.id, set.title])), [sets])
 
-  if (loading) return <div className="loading-page">Loading progress...</div>
+  if (loading) return <div className="loading-page"><LoadingIndicator label="Loading progress..." /></div>
 
   return (
     <div className="dashboard-page">

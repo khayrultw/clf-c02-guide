@@ -55,6 +55,24 @@ export default function AuthPage({ mode }) {
 
   return (
     <section className="auth-page">
+      {registration && confirmationPending && (
+        <div className="modal-backdrop">
+          <div className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-email-title">
+            <p className="eyebrow">Almost there</p>
+            <h2 id="confirm-email-title">Confirm your email</h2>
+            <p>
+              We sent a confirmation link to <strong>{email}</strong>.
+              Confirm it before signing in.
+            </p>
+            <div className="modal-actions">
+              <button className="modal-cancel-button" type="button" onClick={() => setConfirmationPending(false)}>
+                Close
+              </button>
+              <Link className="button primary" to="/login">Go to sign in</Link>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="auth-card">
         {registration && registrationComplete ? (
           <>

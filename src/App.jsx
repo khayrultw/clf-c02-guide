@@ -16,6 +16,7 @@ const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'))
 const EmailVerifiedPage = lazy(() => import('./pages/EmailVerifiedPage'))
 import { useAuth } from './lib/AuthContext'
 import { usePracticeNavigation } from './lib/PracticeNavigationContext'
+import LoadingIndicator from './components/LoadingIndicator'
 
 // Start each new page at the top; links with a #hash scroll to their heading instead.
 function ScrollToTop() {
@@ -29,7 +30,7 @@ function ScrollToTop() {
 function PracticeRoute({ children }) {
   const { user, loading, isConfigured } = useAuth()
   const location = useLocation()
-  if (loading) return <div className="loading-page">Loading...</div>
+  if (loading) return <div className="loading-page"><LoadingIndicator /></div>
   if (isConfigured && !user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
@@ -39,7 +40,7 @@ function PracticeRoute({ children }) {
 function DashboardRoute({ children, adminOnly = false }) {
   const { user, loading, isConfigured, role } = useAuth()
   const location = useLocation()
-  if (loading) return <div className="loading-page">Loading...</div>
+  if (loading) return <div className="loading-page"><LoadingIndicator /></div>
   if (isConfigured && !user) {
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
@@ -119,7 +120,7 @@ export default function App() {
       </header>
       <ScrollToTop />
       <main id="main-content">
-        <Suspense fallback={<div className="loading-page">Loading...</div>}>
+        <Suspense fallback={<div className="loading-page"><LoadingIndicator /></div>}>
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/learn" element={<CollectionPage collection="learn" />} />
