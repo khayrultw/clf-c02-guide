@@ -14,7 +14,6 @@ export default function AuthPage({ mode }) {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [registrationComplete, setRegistrationComplete] = useState(false)
-  const [confirmationPending, setConfirmationPending] = useState(false)
   const registration = mode === 'register'
   useDocumentTitle(registration ? 'Register' : 'Sign in')
 
@@ -36,14 +35,8 @@ export default function AuthPage({ mode }) {
       if (result.error) throw result.error
 
       if (registration) {
-        if (result.data?.session) {
-          await signOut()
-          setConfirmationPending(false)
-          setMessage('Registration complete. Go to the login page to sign in.')
-        } else {
-          setConfirmationPending(true)
-          setMessage('Check your email to confirm your account.')
-        }
+        if (result.data?.session) await signOut()
+        setMessage('Registration complete. Go to the login page to sign in.')
         setRegistrationComplete(true)
       }
     } catch (caught) {
@@ -55,38 +48,14 @@ export default function AuthPage({ mode }) {
 
   return (
     <section className="auth-page">
-      {registration && confirmationPending && (
-        <div className="modal-backdrop">
-          <div className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="confirm-email-title">
-            <p className="eyebrow">Almost there</p>
-            <h2 id="confirm-email-title">Confirm your email</h2>
-            <p>
-              We sent a confirmation link to <strong>{email}</strong>.
-              Confirm it before signing in.
-            </p>
-            <div className="modal-actions">
-              <button className="modal-cancel-button" type="button" onClick={() => setConfirmationPending(false)}>
-                Close
-              </button>
-              <Link className="button primary" to="/login">Go to sign in</Link>
-            </div>
-          </div>
-        </div>
-      )}
       <div className="auth-card">
         {registration && registrationComplete ? (
           <>
             <p className="eyebrow">Registration submitted</p>
-            <h1>Check your email</h1>
+            <h1>Account created</h1>
             <p className="form-message success" role="status">
               {message}
             </p>
-            {confirmationPending && (
-              <p>
-                We sent a confirmation link to <strong>{email}</strong>.
-                Confirm it before signing in.
-              </p>
-            )}
             <Link className="button primary" to="/login">Go to login</Link>
           </>
         ) : (
