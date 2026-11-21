@@ -44,7 +44,7 @@ Recommended Supabase Auth settings:
 
 ## Hosting
 
-The site is a single-page app, so every path must serve `index.html`; otherwise refreshing a page or opening the email links for `/reset-password` and `/email-verified` returns 404. `public/_redirects` handles this on Netlify and Cloudflare Pages. On AWS Amplify add a rewrite from `</^[^.]+$/>` to `/index.html` (200). On S3 + CloudFront, return `/index.html` with status 200 for 403 and 404 errors.
+The site is a single-page app, so every path must serve `index.html`; otherwise refreshing a page or opening the email links for `/reset-password` and `/email-verified` returns 404. `wrangler.jsonc` sets `assets.not_found_handling` to `single-page-application` for Cloudflare. On AWS Amplify add a rewrite from `</^[^.]+$/>` to `/index.html` (200). On S3 + CloudFront, return `/index.html` with status 200 for 403 and 404 errors.
 
 ## Password recovery
 
