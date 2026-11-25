@@ -3,3 +3,4 @@ dist
 .env
 .env.local
 src/content/question-sets/*.json
+supabase

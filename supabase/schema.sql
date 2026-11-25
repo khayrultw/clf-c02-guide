@@ -117,6 +117,34 @@ create unique index if not exists quiz_attempts_one_mock_in_progress
   on public.quiz_attempts (user_id)
   where kind = 'mock' and status = 'in_progress';
 
+-- Each student keeps only the latest completed practice attempt per set and the latest
+-- completed mock exam. Older completed duplicates (and their answers, via cascade) are
+-- removed before the unique indexes below are created. Preview them first with:
+--   with ranked as (
+--     select id, user_id, kind, set_id, completed_at, row_number() over (
+--       partition by user_id, kind, set_id order by completed_at desc nulls last, id) as position
+--     from public.quiz_attempts where status = 'completed'
+--   )
+--   select * from ranked where position > 1;
+with ranked as (
+  select id, row_number() over (
+    partition by user_id, kind, set_id
+    order by completed_at desc nulls last, id
+  ) as position
+  from public.quiz_attempts
+  where status = 'completed'
+)
+delete from public.quiz_attempts
+where id in (select id from ranked where position > 1);
+
+create unique index if not exists quiz_attempts_one_completed_practice_per_set
+  on public.quiz_attempts (user_id, set_id)
+  where kind = 'practice' and status = 'completed';
+
+create unique index if not exists quiz_attempts_one_completed_mock
+  on public.quiz_attempts (user_id)
+  where kind = 'mock' and status = 'completed';
+
 alter table public.question_sets enable row level security;
 alter table public.questions enable row level security;
 alter table public.answer_keys enable row level security;
@@ -541,6 +569,13 @@ begin
       using errcode = 'P0001';
   end if;
 
+  -- Removed before the update: the unique index allows one completed attempt per set.
+  delete from public.quiz_attempts
+  where user_id = v_attempt.user_id
+    and kind = 'practice'
+    and set_id = v_attempt.set_id
+    and status = 'completed';
+
   update public.quiz_attempts
   set
     status = 'completed',
@@ -800,6 +835,11 @@ begin
     return v_attempt;
   end if;
 
+  delete from public.quiz_attempts
+  where user_id = v_attempt.user_id
+    and kind = 'mock'
+    and status = 'completed';
+
   update public.quiz_attempts
   set
     status = 'completed',
@@ -813,6 +853,321 @@ begin
   returning * into v_attempt;
   return v_attempt;
 end;
+$$;
+
+-- Admin tracking. Each function returns nothing unless the caller is an admin, and counts
+-- only completed attempts of student accounts. A student has at most one completed
+-- practice attempt per set and one completed mock, so every completed attempt is the latest.
+
+-- One row per answer of a completed attempt (one row per attempt if it has none).
+-- Internal helper: the admin functions call it, and no client role is granted it.
+create or replace function public.admin_completed_answers()
+returns table (
+  attempt_id uuid,
+  user_id uuid,
+  kind text,
+  set_id text,
+  completed_at timestamptz,
+  question_id text,
+  domain text,
+  is_correct boolean
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select
+    attempts.id,
+    attempts.user_id,
+    attempts.kind,
+    attempts.set_id,
+    attempts.completed_at,
+    answers.question_id,
+    questions.domain,
+    answers.is_correct
+  from public.quiz_attempts attempts
+  join public.profiles profiles
+    on profiles.id = attempts.user_id and profiles.role = 'student'
+  left join public.quiz_answers answers on answers.attempt_id = attempts.id
+  left join public.questions questions on questions.id = answers.question_id
+  where attempts.status = 'completed'
+    and public.is_admin();
+$$;
+
+-- One row per student, including students with no completed attempt. Accuracy covers
+-- the latest completed practice attempts and mock exam. The weakest domain needs at
+-- least 5 answered questions; ties go to the domain with more answers.
+create or replace function public.admin_student_overview()
+returns table (
+  user_id uuid,
+  full_name text,
+  email text,
+  completed_attempts integer,
+  correct integer,
+  answered integer,
+  accuracy integer,
+  weakest_domain text,
+  weakest_correct integer,
+  weakest_answered integer,
+  weakest_accuracy integer
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with completed as (
+    select done.attempt_id, done.user_id, done.question_id, done.domain, done.is_correct
+    from public.admin_completed_answers() as done
+  ),
+  attempt_totals as (
+    select completed.user_id, count(distinct completed.attempt_id)::integer as completed_attempts
+    from completed
+    group by completed.user_id
+  ),
+  totals as (
+    select
+      completed.user_id,
+      count(completed.question_id)::integer as answered,
+      (count(*) filter (where completed.is_correct))::integer as correct
+    from completed
+    group by completed.user_id
+  ),
+  domain_totals as (
+    select
+      completed.user_id,
+      completed.domain,
+      count(completed.question_id)::integer as answered,
+      (count(*) filter (where completed.is_correct))::integer as correct
+    from completed
+    where completed.domain is not null
+    group by completed.user_id, completed.domain
+  ),
+  weakest as (
+    select distinct on (domain_totals.user_id)
+      domain_totals.user_id,
+      domain_totals.domain,
+      domain_totals.correct,
+      domain_totals.answered
+    from domain_totals
+    where domain_totals.answered >= 5
+    order by
+      domain_totals.user_id,
+      domain_totals.correct::numeric / domain_totals.answered,
+      domain_totals.answered desc,
+      domain_totals.domain
+  )
+  select
+    students.id,
+    students.full_name,
+    students.email,
+    coalesce(attempt_totals.completed_attempts, 0),
+    coalesce(totals.correct, 0),
+    coalesce(totals.answered, 0),
+    round(100.0 * totals.correct / nullif(totals.answered, 0))::integer,
+    weakest.domain,
+    weakest.correct,
+    weakest.answered,
+    round(100.0 * weakest.correct / weakest.answered)::integer
+  from public.profiles students
+  left join attempt_totals on attempt_totals.user_id = students.id
+  left join totals on totals.user_id = students.id
+  left join weakest on weakest.user_id = students.id
+  where students.role = 'student'
+    and public.is_admin()
+  order by lower(coalesce(students.full_name, students.email, '')), students.id;
+$$;
+
+-- Headline numbers for the admin summary cards.
+create or replace function public.admin_summary()
+returns table (
+  students integer,
+  active_students integer,
+  completed_attempts integer,
+  correct integer,
+  answered integer,
+  accuracy integer
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  select
+    totals.students,
+    totals.active_students,
+    totals.completed_attempts,
+    totals.correct,
+    totals.answered,
+    round(100.0 * totals.correct / nullif(totals.answered, 0))::integer
+  from (
+    select
+      count(*)::integer as students,
+      (count(*) filter (where overview.completed_attempts > 0))::integer as active_students,
+      coalesce(sum(overview.completed_attempts), 0)::integer as completed_attempts,
+      coalesce(sum(overview.correct), 0)::integer as correct,
+      coalesce(sum(overview.answered), 0)::integer as answered
+    from public.admin_student_overview() overview
+  ) totals
+  where public.is_admin();
+$$;
+
+-- Domain totals, every set (completed or not) and the mock exam for one student.
+-- Sets and the mock are null until completed.
+create or replace function public.admin_student_detail(p_user_id uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with completed as (
+    select
+      done.attempt_id,
+      done.kind,
+      done.set_id,
+      done.completed_at,
+      done.question_id,
+      done.domain,
+      done.is_correct
+    from public.admin_completed_answers() as done
+    where done.user_id = p_user_id
+  ),
+  domains as (
+    select
+      completed.domain,
+      count(completed.question_id)::integer as answered,
+      (count(*) filter (where completed.is_correct))::integer as correct
+    from completed
+    where completed.domain is not null
+    group by completed.domain
+  ),
+  attempt_results as (
+    select
+      completed.attempt_id,
+      completed.kind,
+      completed.set_id,
+      completed.completed_at,
+      count(completed.question_id)::integer as answered,
+      (count(*) filter (where completed.is_correct))::integer as correct
+    from completed
+    group by completed.attempt_id, completed.kind, completed.set_id, completed.completed_at
+  )
+  select jsonb_build_object(
+    'domains', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'domain', domains.domain,
+        'answered', domains.answered,
+        'correct', domains.correct
+      ) order by domains.domain)
+      from domains
+    ), '[]'::jsonb),
+    'sets', coalesce((
+      select jsonb_agg(jsonb_build_object(
+        'set_id', question_sets.id,
+        'title', question_sets.title,
+        'set_number', question_sets.set_number,
+        'completed_at', results.completed_at,
+        'answered', results.answered,
+        'correct', results.correct,
+        'accuracy', round(100.0 * results.correct / nullif(results.answered, 0))::integer
+      ) order by question_sets.set_number, question_sets.id)
+      from public.question_sets question_sets
+      left join attempt_results results
+        on results.kind = 'practice' and results.set_id = question_sets.id
+    ), '[]'::jsonb),
+    'mock', (
+      select jsonb_build_object(
+        'completed_at', results.completed_at,
+        'answered', results.answered,
+        'correct', results.correct,
+        'accuracy', round(100.0 * results.correct / nullif(results.answered, 0))::integer
+      )
+      from attempt_results results
+      where results.kind = 'mock'
+    )
+  )
+  where public.is_admin();
+$$;
+
+-- One row per set, including sets nobody has completed. Counts the latest completed
+-- practice attempt of each student.
+create or replace function public.admin_set_overview()
+returns table (
+  set_id text,
+  title text,
+  set_number text,
+  students integer,
+  correct integer,
+  answered integer,
+  accuracy integer
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with practice as (
+    select done.user_id, done.set_id, done.question_id, done.is_correct
+    from public.admin_completed_answers() as done
+    where done.kind = 'practice'
+  ),
+  totals as (
+    select
+      practice.set_id,
+      count(distinct practice.user_id)::integer as students,
+      count(practice.question_id)::integer as answered,
+      (count(*) filter (where practice.is_correct))::integer as correct
+    from practice
+    group by practice.set_id
+  )
+  select
+    question_sets.id,
+    question_sets.title,
+    question_sets.set_number,
+    coalesce(totals.students, 0),
+    coalesce(totals.correct, 0),
+    coalesce(totals.answered, 0),
+    round(100.0 * totals.correct / nullif(totals.answered, 0))::integer
+  from public.question_sets question_sets
+  left join totals on totals.set_id = question_sets.id
+  where public.is_admin()
+  order by question_sets.set_number, question_sets.id;
+$$;
+
+-- Per-question results for one set across every student's latest completed attempt.
+create or replace function public.admin_set_questions(p_set_id text)
+returns table (
+  question_id text,
+  number integer,
+  prompt text,
+  correct integer,
+  answered integer
+)
+language sql
+stable
+security definer
+set search_path = ''
+as $$
+  with practice as (
+    select done.question_id, done.is_correct
+    from public.admin_completed_answers() as done
+    where done.kind = 'practice'
+      and done.set_id = p_set_id
+  )
+  select
+    questions.id,
+    questions.number,
+    questions.prompt,
+    (count(*) filter (where practice.is_correct))::integer,
+    count(practice.question_id)::integer
+  from public.questions questions
+  left join practice on practice.question_id = questions.id
+  where questions.set_id = p_set_id
+    and public.is_admin()
+  group by questions.id, questions.number, questions.prompt
+  order by questions.number;
 $$;
 
 revoke execute on function public.handle_new_user() from public, anon, authenticated;
@@ -837,3 +1192,14 @@ grant execute on function public.domain_performance(boolean) to authenticated;
 grant execute on function public.start_mock_exam() to authenticated;
 grant execute on function public.save_mock_answer(uuid, text, text[]) to authenticated;
 grant execute on function public.finish_mock_exam(uuid) to authenticated;
+revoke execute on function public.admin_completed_answers() from public, anon, authenticated;
+revoke execute on function public.admin_summary() from public, anon;
+revoke execute on function public.admin_student_overview() from public, anon;
+revoke execute on function public.admin_student_detail(uuid) from public, anon;
+revoke execute on function public.admin_set_overview() from public, anon;
+revoke execute on function public.admin_set_questions(text) from public, anon;
+grant execute on function public.admin_summary() to authenticated;
+grant execute on function public.admin_student_overview() to authenticated;
+grant execute on function public.admin_student_detail(uuid) to authenticated;
+grant execute on function public.admin_set_overview() to authenticated;
+grant execute on function public.admin_set_questions(text) to authenticated;

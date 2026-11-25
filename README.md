@@ -76,7 +76,7 @@ This SQL must be run by a Supabase project administrator. Do not accept a role f
 - `question_sets`: set title and question count
 - `questions`: prompts, options, exam domain, and task
 - `answer_keys`: correct answers and explanations (readable by admins only)
-- `quiz_attempts`: one row per attempt; retaking a set starts a new attempt and keeps the old one
+- `quiz_attempts`: one row per attempt. Each student keeps only their latest completed practice attempt per set and their latest completed mock exam. A retake keeps the previous result until it is completed, then replaces it. An in-progress attempt is kept alongside the previous result and is never counted in admin figures.
 - `quiz_answers`: selected answers and correctness per question
 
 Students cannot write scores or answers directly. The app calls these database functions, which grade on the server:
@@ -84,11 +84,19 @@ Students cannot write scores or answers directly. The app calls these database f
 - `start_attempt(set_id)`: resumes the in-progress attempt or starts a new one
 - `submit_answer(attempt_id, question_id, selected)`: grades and stores an answer once, then returns the explanation
 - `get_attempt_review(attempt_id)`: answers and explanations already earned in an attempt
-- `complete_attempt(attempt_id)`: finishes an attempt after every question is answered
+- `complete_attempt(attempt_id)`: finishes an attempt after every question is answered and replaces the student's previous completed attempt for that set
 - `attempt_summaries(all)` and `domain_performance(all)`: dashboard data; `all = true` only works for admins
 - `start_mock_exam()`: resumes the in-progress mock exam or draws a new one: 65 questions weighted 16/19/22/8 by domain, preferring questions the student has not answered, with a 90-minute deadline
 - `save_mock_answer(attempt_id, question_id, selected)`: saves or clears a mock answer without revealing whether it is correct
-- `finish_mock_exam(attempt_id)`: scores and closes a mock exam (also after the deadline)
+- `finish_mock_exam(attempt_id)`: scores and closes a mock exam (also after the deadline) and replaces the student's previous completed mock exam
+
+Admin tracking functions (admin only; they return nothing for other users):
+
+- `admin_summary()`: students, active students (with a completed attempt), completed attempts, and overall accuracy
+- `admin_student_overview()`: one row per student with overall accuracy and weakest domain (at least 5 answered questions)
+- `admin_student_detail(student_id)`: domain totals, per-set results, and the mock exam result for one student
+- `admin_set_overview()`: one row per set with accuracy and the number of students who completed it
+- `admin_set_questions(set_id)`: per-question correct and answered counts for one set
 
 While a mock exam is in progress, its correctness, explanations, score, and domain results stay hidden from the student, including through direct table reads.
 
@@ -99,7 +107,7 @@ The only columns a student can update directly are `current_question_index`, `cu
 Run `supabase/schema.sql` again after adding or updating the database, then run
 `npm run seed-supabase` so questions get their exam domain. The script is idempotent,
 upgrades existing databases in place, and backfills existing users into `profiles`.
-Existing attempts and answers are kept.
+In-progress attempts are kept. Before the first run after this change, back up `quiz_attempts` and `quiz_answers`: the script deletes older completed duplicates (and their answers) so that only the latest completed attempt per student and set, and the latest completed mock per student, remain. The script's comments include a read-only query that lists the rows it would delete.
 
 After running the SQL, verify the tables in Supabase:
 

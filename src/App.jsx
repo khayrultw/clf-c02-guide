@@ -13,6 +13,10 @@ const ForgotPasswordPage = lazy(() => import('./pages/ForgotPasswordPage'))
 const ResetPasswordPage = lazy(() => import('./pages/ResetPasswordPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
 const AdminDashboardPage = lazy(() => import('./pages/AdminDashboardPage'))
+const AdminStudentList = lazy(() => import('./pages/AdminStudentList'))
+const AdminStudentDetailPage = lazy(() => import('./pages/AdminStudentDetailPage'))
+const AdminSetList = lazy(() => import('./pages/AdminSetList'))
+const AdminSetDetailPage = lazy(() => import('./pages/AdminSetDetailPage'))
 const EmailVerifiedPage = lazy(() => import('./pages/EmailVerifiedPage'))
 import { useAuth } from './lib/AuthContext'
 import { usePracticeNavigation } from './lib/PracticeNavigationContext'
@@ -148,7 +152,13 @@ export default function App() {
             } />
             <Route path="/admin" element={
               <DashboardRoute adminOnly><AdminDashboardPage /></DashboardRoute>
-            } />
+            }>
+              <Route index element={<Navigate to="students" replace />} />
+              <Route path="students" element={<AdminStudentList />} />
+              <Route path="students/:studentId" element={<AdminStudentDetailPage />} />
+              <Route path="sets" element={<AdminSetList />} />
+              <Route path="sets/:setId" element={<AdminSetDetailPage />} />
+            </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
